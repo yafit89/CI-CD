@@ -1,0 +1,102 @@
+name: Integration Test
+description: 'Integration test for MySQL'
+
+inputs:
+  skip_checkout:
+    description: 'Skip checkout'
+    default: 'true'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout Code
+      if: inputs.skip_checkout != 'true'
+      uses: actions/checkout@v3
+
+    - name: Ensure MySQL Container is Removed
+      shell: bash
+      run: |
+        echo "Checking if MySQL container exists..."
+        if docker ps -a --format '{{.Names}}' | grep -q '^mysql$'; then
+          echo "MySQL container exists. Removing it..."
+          docker rm -f mysql
+        else
+          echo "No MySQL container found. Continuing..."
+        fi
+
+    - name: Start MySQL
+      shell: bash
+      run: |
+        docker run -d --rm --name mysql \
+          -e MYSQL_ROOT_PASSWORD=password \
+          -e MYSQL_DATABASE=test_db \
+          -p 3306:3306 \
+          mysql:5.7
+
+    - name: Wait for MySQL
+      shell: bash
+      run: |
+        echo "Waiting for MySQL to initialize..."
+        until docker exec mysql mysqladmin -uroot -ppassword ping --silent &> /dev/null; do
+          echo "MySQL is not ready. Retrying in 5 seconds..."
+          sleep 5
+        done
+        echo "MySQL is ready!"
+
+    - name: Verify MySQL Initialization
+      shell: bash
+      run: |
+        echo "Verifying MySQL root access..."
+        for i in {1..10}; do
+          if docker exec mysql mysql -uroot -ppassword -e "SELECT 1;" &> /dev/null; then
+            echo "MySQL is ready and accepting connections."
+            break
+          fi
+          echo "MySQL initialization still in progress. Retrying in 5 seconds..."
+          sleep 5
+          if [ "$i" -eq 10 ]; then
+            echo "Failed to connect to MySQL after multiple attempts."
+            exit 1
+          fi
+        done
+
+    - name: Create Tables
+      shell: bash
+      run: |
+        docker exec mysql mysql -uroot -ppassword test_db -e "
+        CREATE TABLE IF NOT EXISTS users (
+          id INT PRIMARY KEY AUTO_INCREMENT,
+          name VARCHAR(255) NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS products (
+          id INT PRIMARY KEY AUTO_INCREMENT,
+          name VARCHAR(255) NOT NULL
+        );
+        "
+
+    - name: Run Write Data
+      shell: bash
+      run: |
+        docker run --rm --network host \
+          -e DB_HOST=127.0.0.1 \
+          -e DB_USER=root \
+          -e DB_PASSWORD=password \
+          -e DB_NAME=test_db \
+          -e ACTION=write python-app
+
+    - name: Run Check Data
+      shell: bash
+      run: |
+        docker run --rm --network host \
+          -e DB_HOST=127.0.0.1 \
+          -e DB_USER=root \
+          -e DB_PASSWORD=password \
+          -e DB_NAME=test_db \
+          -e ACTION=check python-app
+
+    - name: Cleanup
+      if: always()
+      shell: bash
+      run: |
+        echo "Cleaning up resources..."
+        docker rm -f mysql || true

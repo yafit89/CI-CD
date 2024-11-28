@@ -1,0 +1,107 @@
+name: 'Trivy'
+description: 'Security scan using Trivy'
+
+inputs:
+  trivy_artifact_name:
+    description: 'Artifacs name'
+    default: 'trivy_report'
+  scan_type:
+    description: 'Script to run unit tests'
+    required: true
+    default: reposetory # [ reposetory, image ]
+  image_to_scan:
+    description: 'If scan_type set to image, choose image to scan'
+    required: true
+    default: ''
+  severities:
+    description: 'Severity to alert on'
+    default: HIGH,CRITICAL # [ UNKNOWN, LOW, MEDIUM, HIGH, CRITICAL ]
+  trivy_fail_on_detection:
+    description: 'Fail the action if any detection found'
+    default: 'false'
+  trivy_output_format:
+    description: 'The output format of the Trivy scan'
+    default: 'table' # [ table, json, template ]
+  create_artifact:
+    description: 'Upload an artifact of the scan results'
+    default: 'true'
+  repo_path:
+    description: 'The repo working dir'
+    default: '.'
+  skip_trivy_installation:
+    description: 'Skip trivy installtion if done in previous steps'
+    default: 'false'
+  skip_checkout:
+    description: 'Skip git repo checkout'
+    default: 'true'
+
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install Trivy
+      if: inputs.skip_trivy_installation != 'true'
+      shell: bash
+      run: |
+        if ! command -v trivy &> /dev/null
+        then
+            echo "Trivy is not installed. Installing ..."
+            sudo curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin v0.54.1
+        else
+            echo "Trivy is installed"
+        fi
+
+
+    - name: Checkout Code
+      if: inputs.skip_checkout != 'ture'
+      uses: actions/checkout@v3
+
+
+    - name: Trivy - Repository Scan
+      if: inputs.scan_type == 'reposetory'
+      shell: bash
+      run: |
+        trivy repo --severity ${{ inputs.severities }} --format ${{ inputs.trivy_output_format }} --cache-dir ${{ inputs.repo_path }} --output ${{ inputs.repo_path }}/${{ inputs.trivy_artifact_name }}.${{ inputs.trivy_output_format }} ${{ inputs.repo_path }}
+        cat ${{ inputs.repo_path }}/${{ inputs.trivy_artifact_name }}.${{ inputs.trivy_output_format }}
+
+
+    - name: Trivy - Repository Scan
+      if: inputs.scan_type == 'image'
+      shell: bash
+      run: |
+        trivy image ${{ inputs.image_to_scan }} --severity ${{ inputs.severities }} --format ${{ inputs.trivy_output_format }} --output ${{ inputs.repo_path }}/${{ inputs.trivy_artifact_name }}.${{ inputs.trivy_output_format }} --cache-dir ${{ inputs.repo_path }}
+        cat ${{ inputs.repo_path }}/${{ inputs.trivy_artifact_name }}.${{ inputs.trivy_output_format }}
+
+
+    - name: Upload Results Artifact
+      if: inputs.create_artifact == 'true'
+      uses: actions/upload-artifact@v3
+      with:
+        retention-days: 1
+        name: ${{ inputs.trivy_artifact_name }}.${{ inputs.trivy_output_format }}
+        path: ${{ inputs.repo_path }}/${{ inputs.trivy_artifact_name }}.${{ inputs.trivy_output_format }}
+
+
+    - name: Check for Trivy Vulnerabilities
+      shell: bash
+      run: |
+        severities=$(echo "${{ inputs.severities }}" | tr -d ' ' | tr ',' '\n')
+        found_issues=0
+
+        for severity in $severities; do
+          if grep -q "$severity" ${{ inputs.repo_path }}/${{ inputs.trivy_artifact_name }}.${{ inputs.trivy_output_format }}; then
+            echo "Vulnerabilities found with severity $severity!"
+            found_issues=1
+          fi
+        done
+
+        if [ $found_issues -eq 1 ]; then
+          echo "Vulnerabilities found! Failing the build."
+          if [ '${{ inputs.trivy_fail_on_detection }}' == 'true' ]; then
+            exit 1
+          else
+            echo "trivy_fail_on_detection is set to: ${{ inputs.trivy_fail_on_detection }}. Continue ..."
+          fi
+        else
+          echo "No vulnerabilities found at the specified severities."
+        fi

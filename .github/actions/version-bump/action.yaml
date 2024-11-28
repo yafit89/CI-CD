@@ -1,0 +1,68 @@
+name: Version Bump
+description: 'Bump the version and create a new tag'
+
+inputs:
+  version_type:
+    description: 'The type of version bump (major, minor, patch)'
+    default: 'patch'
+    required: true
+  git_user_name:
+    description: 'The git user name'
+    required: true
+  git_user_email:
+    description: 'The git user email'
+    required: true
+
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install Git
+      shell: bash
+      run: |
+        sudo yum install -y git
+        # git config --global user.name "${{ inputs.git_user_name }}"
+        # git config --global user.email "${{ inputs.git_user_email }}"
+
+    - name: Fetch Tags
+      shell: bash
+      run: |
+        git fetch --tags
+
+    - name: Calculate New Version
+      shell: bash
+      run: |
+        # Get the latest tag or default to v0.0.0
+        latest_tag=$(git tag -l --sort=-v:refname | head -n 1 || echo "v0.0.0")
+        version=$(echo "$latest_tag" | sed 's/^v//')
+        echo "Current version: $version"
+
+        # Split the version into major, minor, and patch
+        major=$(echo "$version" | cut -d. -f1)
+        minor=$(echo "$version" | cut -d. -f2)
+        patch=$(echo "$version" | cut -d. -f3)
+
+        # Handle cases with no existing tags
+        if [[ -z "$major" || -z "$minor" || -z "$patch" ]]; then
+          major=0
+          minor=0
+          patch=0
+        fi
+
+        # Increment the version based on input
+        if [[ "${{ inputs.version_type }}" == "major" ]]; then
+          new_version="$((major + 1)).0.0"
+        elif [[ "${{ inputs.version_type }}" == "minor" ]]; then
+          new_version="$major.$((minor + 1)).0"
+        else
+          new_version="$major.$minor.$((patch + 1))"
+        fi
+
+        echo "New version: $new_version"
+        echo "new_version=v$new_version" >> $GITHUB_ENV
+
+    # - name: Create New Tag
+    #   shell: bash
+    #   run: |
+    #     git tag $new_version
+    #     git push https://${{ env.GIT_PAT }}@github.com/${{ github.repository }} $new_version
