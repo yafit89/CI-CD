@@ -5,7 +5,7 @@ on:
   push:
     branches:
         - test
-#       - main
+         - main
 #     paths-ignore:
 #       - .github/workflows/cicd.yaml
 #   pull_request:
@@ -55,10 +55,10 @@ jobs:
       - name: Build and tag Docker image
         run: |
           docker build -t users_app:v1 ./app
-          docker tag users_app:v1 d4v5he/users_app:v1
+          docker tag users_app:v1 yafit12/users_app:v1
 
       - name: Push Docker image
-        run: docker push d4v5he/users_app:v1
+        run: docker push yafit12/users_app:v1
 
   deploy:
     runs-on: ubuntu-latest
@@ -67,11 +67,11 @@ jobs:
     steps:
       - name: Pull Docker image
         run: |
-          docker pull d4v5he/users_app:v1
+          docker pull yafit12/users_app:v1
 
       - name: Docker Run
         run: |
-          docker run --rm d4v5he/users_app:v1 > users_app.output
+          docker run --rm yafit12/users_app:v1 > users_app.output
           cat users_app.output
 
       - name: Upload users_app.output as artifact
