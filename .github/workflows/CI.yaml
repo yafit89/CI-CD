@@ -14,6 +14,13 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Verify Git Repository
+        run: |
+          git status
+          git log --oneline
 
       - name: Install Python
         run: |
@@ -36,23 +43,10 @@ jobs:
       - name: Run Unit Tests
         run: pytest db_app/test_users.py
 
-      # - name: Trivy Code Security Scan
-      #   uses: ./.github/actions/security-scan
-      #   with:
-      #     scan_type: 'repository'
-      #     severities: 'HIGH,CRITICAL'
-
       - name: Build Docker Image
         run: |
           docker build -t python-app ./db_app
           docker images
-
-      # - name: Trivy Docker Security Scan
-      #   uses: ./.github/actions/security-scan
-      #   with:
-      #     scan_type: 'image'
-      #     image_to_scan: 'python-app:latest'
-      #     severities: 'HIGH,CRITICAL'
 
       - name: Run Integration Tests
         uses: ./.github/actions/integration
